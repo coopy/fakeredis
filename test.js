@@ -172,6 +172,7 @@ process.stdout.write('testing fakeredis ...\n\n');
 
     redis.ZADD("zset1", 1, "one", 2, "two");
     redis.ZADD("zset2", 1, "one", 2, "two", 3, "three");
+    redis.ZADD("zset3", -1, "one", -2, "two", -3, "three");
     redis.ZINTERSTORE("out", 2, "zset1", "zset2", "weights", 2, 3, test("ZINTERSTORE no aggregate", null, 2));
     redis.ZRANGE("out", 0, -1, "WITHSCORES", test("ZINTERSTORE / ZRANGE", null, [ "one", "5", "two", "10" ]));
 
@@ -214,7 +215,16 @@ process.stdout.write('testing fakeredis ...\n\n');
     );
     redis.ZRANGE("out", 0, -1, "WITHSCORES", test("ZUNIONSTORE / ZRANGE", null, [ "one", "2.5", "two", "5", "three", "6" ]));
 
-    redis.KEYS("*z?et*", test("KEYS with ? and *", null, [ "myzset", "zset1", "zset2" ]));
+    redis.ZUNIONSTORE(
+        "out", 2, "zset2", "zset3", "weights", Infinity, Infinity, "aggregate", "sum",
+        test("ZUNIONSTORE weight +inf", null, 3)
+    );
+    // Negative and positive scores should cancel each other out to 0, and the zunionstore should fall back to lexicographic sorting.
+    redis.ZRANGE("out", 0, -1, "withscores",
+        test("ZUNIONSTORE weight +inf / ZRANGE", null, [ "one", 0, "three", 0, "two", 0 ])
+    );
+
+    redis.KEYS("*z?et*", test("KEYS with ? and *", null, [ "myzset", "zset1", "zset2", "zset3" ]));
     redis.KEYS("my[sz]*et", test("KEYS with [] and *", null, [ "myset", "myzset" ]));
     redis.KEYS("my[sz]{2}et", test("REGEXP escaping", null, []));
     redis.TYPE("myset", test("TYPE", null, "set"));
@@ -976,7 +986,7 @@ function countTests() {
 }
 
 var NUM_TESTS = countTests();
-if (NUM_TESTS !== 272)
+if (NUM_TESTS !== 274)
     throw new Error("Test count is off: " + NUM_TESTS);
 
 process.on('exit', function () {
